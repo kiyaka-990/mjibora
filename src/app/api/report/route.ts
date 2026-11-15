@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runIntakeAgent, dedupe } from "@/lib/agents";
+import { redact } from "@/lib/redact";
 
 export async function POST(req: Request) {
   const { tenantId, text } = await req.json();
@@ -7,8 +8,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "tenantId and text required" }, { status: 400 });
   }
   try {
-    // Dedupe first — exact duplicate merges into the existing case.
-    const dupe = dedupe(tenantId, text);
+    // Dedupe on REDACTED text — cases store redacted summaries, so raw
+    // text containing PII would never match otherwise.
+    const { safe } = redact(text);
+    const dupe = dedupe(tenantId, safe);
     if (dupe) {
       return NextResponse.json({
         ref: dupe.ref,
