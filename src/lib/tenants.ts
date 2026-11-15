@@ -6,7 +6,7 @@ export interface TenantConfig {
   categories: string[];
   departments: Record<string, string>;
   slaHours: Record<"low" | "medium" | "high" | "critical", number>;
-  fees: Record<string, number>; // category -> KES fee
+  fees: Record<string, number>; // category -> KES fee (0 = free)
 }
 
 export const TENANTS: Record<TenantId, TenantConfig> = {
@@ -36,8 +36,26 @@ export const TENANTS: Record<TenantId, TenantConfig> = {
       noise: "Estate Manager",
     },
     slaHours: { low: 96, medium: 72, high: 24, critical: 1 },
-    slaHours2: undefined,
-    fees: { maintenance: 0, security:  reportError,
+    fees: { maintenance: 0, security: 0, landscaping: 0, noise: 0 },
   },
-  // placeholder
+  school: {
+    id: "school",
+    name: "School Service Desk",
+    categories: ["facilities", "bullying", "academics", "transport", "health"],
+    departments: {
+      facilities: "Facilities Office",
+      bullying: "Discipline & Welfare",
+      academics: "Academic Office",
+      transport: "Transport Office",
+      health: "School Nurse & Welfare",
+    },
+    slaHours: { low: 96, medium: 48, high: 24, critical: 2 },
+    fees: { facilities: 0, bullying: 0, academics: 0, transport: 0, health: 0 },
+  },
+};
+
+export function getTenant(id: string): TenantConfig {
+  const t = TENANTS[id as TenantId];
+  if (!t) throw new Error(`Unknown tenant: ${id}`);
+  return t;
 }
