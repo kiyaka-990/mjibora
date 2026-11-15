@@ -15,8 +15,10 @@ interface CaseRow {
 }
 
 interface ReportResult {
-  ref: string; category: string; department: string; severity: string;
-  slaHours: number; feeKes: number; payStatus: string; letter: string;
+  ref?: string; category?: string; department?: string; severity?: string;
+  slaHours?: number; feeKes?: number; payStatus?: string; letter?: string;
+  steps?: Array<{ tool: string; args: unknown }>;
+  duplicate?: boolean; error?: string;
 }
 
 export default function Desk() {
@@ -24,10 +26,12 @@ export default function Desk() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ReportResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
   const [feed, setFeed] = useState<{ at: string; agent: string; msg: string }[]>([]);
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [stats, setStats] = useState<{ total: number; open: number; escalated: number; resolved: number; slaCompliance: number } | null>(null);
+  const [heuristic, setHeuristic] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
   const tenant = TENANTS.find((t) => t.id === tenantId)!;
 
@@ -39,10 +43,15 @@ export default function Desk() {
 
   useEffect(() => {
     const load = async () => {
-      const r = await fetch(`/api/reports?tenantId=${tenantId}`);
-      const d = await r.json();
-      setCases(d.cases ?? []);
-      setStats(d.stats ?? null);
+      try {
+        const r = await fetch(`/api/reports?tenantId=${tenantId}`);
+        const d = await r.json();
+        if (!r.ok) { setError(`Dashboard load failed (${r.status})`); return; }
+        setCases(d.cases ?? []);
+        setStats(d.stats ?? null);
+      } catch (e) {
+        setError(`Dashboard unreachable: ${(e as Error).message}`);
+      }
     };
     load();
     const t = setInterval(load, 5000);
@@ -56,6 +65,7 @@ export default function Desk() {
   async function submit() {
     if (!text.trim() || busy) return;
     setBusy(true);
+    setError(null);
     setResult(null);
     try {
       const r = await fetch("/api/report", {
@@ -63,28 +73,40 @@ export default function Desk() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tenantId, text }),
       });
-      setResult(await r.json());
+      const d: ReportResult = await r.json();
+      if (!r.ok) { setError(d.error ?? `Request failed (${r.status})`); return; }
+      if (d.steps?.some((s) => s.tool === "classify" && (s.args as any)?.mode === "heuristic")) setHeuristic(true);
+      setResult(d);
       setText("");
+    } catch (e) {
+      setError(`Network error: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
   }
 
   async function pay() {
-    if (!result) return;
-    await fetch("/api/pay", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ref: result.ref, phone, confirm: true }),
-    });
-    setResult({ ...result, payStatus: "paid" });
+    if (!result?.ref) return;
+    setError(null);
+    try {
+      const r = await fetch("/api/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref: result.ref, phone, confirm: true }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setError(d.error ?? `Payment blocked (${r.status})`); return; }
+      setResult({ ...result, payStatus: "paid" });
+    } catch (e) {
+      setError(`Payment error: ${(e as Error).message}`);
+    }
   }
 
   function startVoice() {
     const SR = (window as any).webkitSpeechRecognition ?? (window as any).SpeechRecognition;
     if (!SR) { alert("Voice not supported — use Chrome."); return; }
     const rec = new SR();
-    rec.lang = tenantId === "school" ? "en-KE" : "sw-KE";
+    rec.lang = tenantId === "county" ? "sw-KE" : "en-KE";
     rec.onresult = (e: any) => setText(e.results[0][0].transcript);
     rec.start();
   }
@@ -94,6 +116,17 @@ export default function Desk() {
   return (
     <main style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
       <h1 style={{ marginTop: 0 }}>🌍 MjiBora <span style={{ fontSize: 14, opacity: 0.6 }}>AI Service Desk — voice-first, multi-tenant</span></h1>
+
+      {error && (
+        <div style={{ background: "#5d1010", border: "1px solid #ff5252", borderRadius: 8, padding: 12, marginBottom: 16 }}>
+          <strong>⚠️ Error:</strong> {error}
+        </div>
+      )}
+      {heuristic && (
+        <div style={{ background: "#3e2f0b", border: "1px solid #ffc107", borderRadius: 8, padding: 12, marginBottom: 16 }}>
+          <strong>Heuristic mode:</strong> no OPENAI_API_KEY detected — cases are filed using the built-in bilingual classifier. All guardrails (PII redaction, severity floors, SLA, fee gates) remain active.
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         {TENANTS.map((t) => (
@@ -132,12 +165,20 @@ export default function Desk() {
           {result && (
             <div style={{ marginTop: 16, border: "1px solid #24344d", borderRadius: 12, padding: 16 }}>
               <h4 style={{ marginTop: 0 }}>
-                Case {result.ref} — <span style={{ color: sevColor[result.severity] }}>{result.severity}</span>
+                {result.duplicate ? `↪️ Merged into existing case ${result.ref}` : `Case ${result.ref} — `}
+                {!result.duplicate && result.severity && (
+                  <span style={{ color: sevColor[result.severity] }}>{result.severity}</span>
+                )}
               </h4>
               <p style={{ fontSize: 14 }}>
                 {result.category} → {result.department} · SLA {result.slaHours}h
-                {result.feeKes > 0 ? ` · fee KES ${result.feeKes}` : " · no fee"}
+                {result.feeKes && result.feeKes > 0 ? ` · fee KES ${result.feeKes}` : " · no fee"}
               </p>
+              {result.steps && result.steps.length > 0 && (
+                <p style={{ fontSize: 12, opacity: 0.6 }}>
+                  Agent steps: {result.steps.map((s) => s.tool).join(" → ")}
+                </p>
+              )}
               <p style={{ fontSize: 13, whiteSpace: "pre-wrap", opacity: 0.85 }}>{result.letter}</p>
               {result.payStatus === "awaiting_confirmation" && (
                 <div style={{ display: "flex", gap: 8 }}>
@@ -161,24 +202,31 @@ export default function Desk() {
               <strong style={{ color: stats.slaCompliance >= 90 ? "#8bc34a" : "#f44336" }}> {stats.slaCompliance}% SLA compliance</strong>
             </p>
           )}
-          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ textAlign: "left", opacity: 0.7 }}>
-                <th>Ref</th><th>Category</th><th>Severity</th><th>Status</th><th>SLA due</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cases.map((c) => (
-                <tr key={c.ref} style={{ borderTop: "1px solid #1a2a3d" }}>
-                  <td>{c.ref}</td>
-                  <td>{c.category}</td>
-                  <td style={{ color: sevColor[c.severity] }}>{c.severity}</td>
-                  <td>{c.status}</td>
-                  <td>{new Date(c.slaDueAt).toLocaleString()}</td>
+          {cases.length === 0 && (
+            <p style={{ fontSize: 13, opacity: 0.6 }}>
+              No cases yet for this tenant — submit a report above and it will appear here within seconds.
+            </p>
+          )}
+          {cases.length > 0 && (
+            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ textAlign: "left", opacity: 0.7 }}>
+                  <th>Ref</th><th>Category</th><th>Severity</th><th>Status</th><th>SLA due</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {cases.map((c) => (
+                  <tr key={c.ref} style={{ borderTop: "1px solid #1a2a3d" }}>
+                    <td>{c.ref}</td>
+                    <td>{c.category}</td>
+                    <td style={{ color: sevColor[c.severity] }}>{c.severity}</td>
+                    <td>{c.status}</td>
+                    <td>{new Date(c.slaDueAt).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
 
         <section>
@@ -188,7 +236,7 @@ export default function Desk() {
             {feed.map((e, i) => (
               <div key={i} style={{ padding: "4px 0", borderBottom: "1px solid #16243a" }}>
                 <span style={{ opacity: 0.5 }}>{new Date(e.at).toLocaleTimeString()} </span>
-                <strong style={{ color: e.agent === "payment" ? "#ffc107" : "#4fc3f7" }}>[{e.agent}]</strong> {e.msg}
+                <strong style={{ color: e.agent === "payment" ? "#ffc107" : e.agent === "sla" ? "#f44336" : "#4fc3f7" }}>[{e.agent}]</strong> {e.msg}
               </div>
             ))}
           </div>
