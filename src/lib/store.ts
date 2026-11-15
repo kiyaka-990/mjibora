@@ -1,4 +1,6 @@
 // In-memory store keyed by tenant + ref. Swap for Neon Postgres later.
+import { emit } from "./events";
+
 export type Status = "new" | "in_progress" | "resolved" | "escalated";
 export type PayStatus = "not_required" | "awaiting_confirmation" | "paid" | "blocked";
 
@@ -20,6 +22,7 @@ export interface Case {
 
 const cases = new Map<string, Case>();
 let counter = 1000;
+let ticker: ReturnType<typeof setInterval> | null = null;
 
 export function nextRef(prefix: string): string {
   counter += 1;
@@ -52,3 +55,19 @@ export function tickSLA(): Case[] {
   }
   return breached;
 }
+
+// Background ticker: escalate independently of dashboard polling. Starts
+// on module load in the server process and runs every 60s. Safe on Vercel —
+// serverless instances are short-lived; the route tick remains the fallback.
+export function ensureSLATicker(): void {
+  if (ticker) return;
+  ticker = setInterval(() => {
+    const breached = tickSLA();
+    for (const c of breached) {
+      emit("sla", `SLA breached: ${c.ref} auto-escalated (${c.slaHours}h)`);
+    }
+  }, 60_000);
+  if (typeof ticker.unref === "function") ticker.unref();
+}
+
+ensureSLATicker();
