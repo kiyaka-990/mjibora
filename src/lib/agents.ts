@@ -4,7 +4,7 @@ import { z } from "zod";
 import { redact } from "./redact";
 import { severityFloor, enforceFloor, slaFor, type Severity } from "./severity";
 import { getTenant, type TenantConfig } from "./tenants";
-import { nextRef, saveCase, type Case } from "./store";
+import { nextRef, saveCase, allCases, type Case } from "./store";
 import { emit } from "./events";
 
 export interface AgentRun {
@@ -20,7 +20,7 @@ const KEYWORDS: Record<string, RegExp> = {
   waste: /garbage|waste|takataka|trash/i,
   lighting: /light|taa|lamp/i,
   drainage: /drain|mtaro|sewage/i,
-  security: /theft|thief|break[- ]?in|guard| insecurity/i,
+  security: /theft|thief|break[- ]?in|guard|insecurity/i,
   maintenance: /leak|broken|fence|gate|lift|elevator|repair/i,
   landscaping: /garden|grass|lawn|tree|hedge/i,
   noise: /noise|kelele|loud/i,
@@ -168,8 +168,8 @@ export async function runIntakeAgent(tenantId: string, rawText: string): Promise
 
 export function dedupe(tenantId: string, safe: string): Case | null {
   const norm = safe.toLowerCase().replace(/\W+/g, " ").trim();
-  const existing = [...(function () { return require("./store").allCases(tenantId); })()].find(
-    (c: Case) => c.summarySafe.toLowerCase().replace(/\W+/g, " ").trim() === norm
+  const existing = allCases(tenantId).find(
+    (c) => c.summarySafe.toLowerCase().replace(/\W+/g, " ").trim() === norm
   );
   if (existing) emit("intake", `Duplicate of ${existing.ref} detected — merged`);
   return existing ?? null;
