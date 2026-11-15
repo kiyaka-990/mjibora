@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { severityFloor, enforceFloor } from "./severity.ts";
+import { redact } from "./redact.ts";
 
 test("English critical floor: burst water pipe flooding a road", () => {
   const floor = severityFloor("There has been a burst water pipe flooding Moi Avenue, the road is collapsing.");
@@ -49,15 +50,13 @@ test("No keywords: floor stays low, LLM judgment stands", () => {
 });
 
 test("English PII redaction before LLM", () => {
-  const { redact } = await import("./redact.ts");
   const r = redact("Call me at 0712345678 or email john.doe@example.com on Moi Avenue");
   assert.ok(r.redacted);
   assert.ok(!r.safe.includes("0712345678"));
   assert.ok(!r.safe.includes("john.doe@example.com"));
 });
 
-test("Redaction never mutates redact-tag output", () => {
-  const { redact } = await import("./redact.ts");
+test("Redaction is idempotent (double-redact = single-redact)", () => {
   const once = redact("Call 0712345678");
   const twice = redact(once.safe);
   assert.equal(once.safe, twice.safe);
