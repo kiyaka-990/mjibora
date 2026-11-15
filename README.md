@@ -1,30 +1,48 @@
-# MjiBora — Multi-Tenant AI Service Desk
+# MjiBora v2.1 — Multi-Tenant, Voice-First AI Service Desk
 
-Voice-first AI service desk for counties, estates, and schools.
-Residents describe an issue by voice (Swahili or English) or text;
-a pipeline of specialized agents classifies it, enforces severity/SLA
-in code, drafts an official letter, collects statutory fees via M-Pesa
-(simulated by default), and feeds a public accountability dashboard.
+Residents describe an issue by **voice (Swahili or English), text, or WhatsApp**; a
+tool-calling AI agent classifies it, code-enforced guardrails set severity/SLA,
+an official letter is drafted, statutory fees collect via M-Pesa (simulated by
+default), and a public accountability dashboard tracks SLA compliance.
 
-## Agent pipeline
-Intake Agent (classify, redacted) → Triage (code: severity floor, SLA)
-→ Records Agent (official letter) → Payment Agent (confirm-gated STK)
-→ Accountability Dashboard (SLA compliance stats)
+## The agent loop (visible reasoning)
+One tool-calling agent: `classify` → `file` → letter draft, streamed to the
+live SSE feed so judges watch every step. Duplicate reports merge automatically.
 
-## Hard guarantees (code, not prompts)
-- PII redacted by deterministic regex BEFORE any LLM call
-- Severity floor via keyword rules — the LLM can never downgrade
-- SLA clock deterministic; auto-escalation on breach
-- Fee amounts come from tenant config; LLM and client cannot set them
-- Payment blocked without explicit confirmation (state machine gate)
+## Guardrails — code, not prompts (10 passing tests)
+- **PII redacted by deterministic regex BEFORE any LLM call** — idempotent
+- **Bilingual severity floors (English + Kiswahili)**: "bomba limepasuka",
+  "moto", "hakuna maji", "takataka" trigger the same floors as
+  "burst pipe", "fire", "no water", "garbage". The LLM may raise severity,
+  **never lower it** — proven in `src/lib/severity.test.ts`
+- **SLA clock deterministic**; background ticker escalates breaches every 60s
+- **Fee amounts from tenant config only** — LLM and client cannot set them
+- **Confirm-gate state machine** blocks payment without explicit confirmation
 
-## Run
-1. cp .env.example .env.local and add your OPENAI_API_KEY
-2. npm install
-3. npm run dev → http://localhost:3000
+## Intake channels
+- Web (voice sw-KE / en-KE + text) — always works
+- WhatsApp via Twilio sandbox webhook (`POST /api/whatsapp`) — optional
 
 ## Tenants out of the box
 County (citizen complaints) · Estate (HOA maintenance) · School (parent desk)
 
+## Run
+```bash
+cp .env.example .env.local   # add OPENAI_API_KEY (others optional)
+npm install
+npm test                      # 10 guardrail tests
+npm run dev                   # http://localhost:3000
+```
+
+## Demo script (60 seconds)
+1. County tab → Sample → Submit: watch `[intake]` tool calls + floor enforcement
+2. Submit the same text again → **duplicate merged** into the same ref
+3. Estate/School tabs → whole config flips (multi-tenant proof)
+4. Submit again in Swahili: "Bomba la maji limepasuka…" → critical floor fires
+5. Fee flow: "Blocked drain…" → confirm-gated STK push (sim) → paid ✓
+
 ## Stack
-Next.js 15 · Vercel AI SDK · SSE live feed · Browser Speech API (sw-KE/en-KE) · M-Pesa Daraja sandbox
+Next.js 15 · Vercel AI SDK (tool-calling) · SSE live feed · Browser Speech API
+(sw-KE/en-KE) · M-Pesa Daraja sandbox · Twilio WhatsApp sandbox (optional)
+
+MIT License.
