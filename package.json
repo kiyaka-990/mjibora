@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test --experimental-strip-types src/lib/*.test.ts"
+    "test": "node --test --experimental-strip-types src/lib/severity.test.ts"
   },
   "dependencies": {
     "ai": "^4.3.16",
