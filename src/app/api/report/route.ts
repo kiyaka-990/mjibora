@@ -22,29 +22,17 @@ export async function POST(req: Request) {
         duplicate: true,
       });
     }
-    const { case: c, letter } = await runIntakeAgent(tenantId, text);
+    const { case: c, letter, steps } = await runIntakeAgent(tenantId, text);
     return NextResponse.json({
       ref: c.ref,
-      case: {
-        ref: c.ref,
-        category: c.category,
-        department: c.department,
-        severity: c.severity,
-        slaHours: c.slaHours,
-        feeKes: c.feeKes,
-        payStatus: c.payStatus,
-      },
-      case: {
-        ref: c.ref,
-        category: c.category,
-        department: c.department,
-        severity: c.severity,
-        slaHours: c.slaHours,
-        feeKes: c.feeKes,
-        payStatus: c.payStatus,
-      },
+      category: c.category,
+      department: c.department,
+      severity: c.severity,
+      slaHours: c.slaHours,
+      feeKes: c.feeKes,
+      payStatus: c.payStatus,
       letter,
-      steps: undefined,
+      steps,
     });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
